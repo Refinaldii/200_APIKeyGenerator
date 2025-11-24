@@ -1,4 +1,4 @@
-// public/ui.js
+// public/ui.js (revisi)
 const consoleBox = document.getElementById('console');
 const input = document.getElementById('input');
 const btnRandom = document.getElementById('btnRandom');
@@ -103,7 +103,6 @@ btnSaveUser.addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'save failed');
 
-
     printToConsole('> ✅ Saved: ' + JSON.stringify(data.user), '#00ff88');
     savedUserId = data.user.id;
 
@@ -114,7 +113,14 @@ btnSaveUser.addEventListener('click', async () => {
 
     // on unload, send offline via beacon
     window.addEventListener('beforeunload', () => {
-      if (savedUserId) navigator.sendBeacon(`/api/user/${savedUserId}/offline`);
+      if (savedUserId) {
+        try {
+          // sendBeacon prefers POST with body; server accepts POST to /api/user/:id/offline
+          navigator.sendBeacon(`/api/user/${savedUserId}/offline`);
+        } catch (e) {
+          // fallback: synchronous fetch (not recommended) - but we keep silent
+        }
+      }
     });
 
   } catch (err) {
