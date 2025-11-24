@@ -1,4 +1,4 @@
-<!-- public/admin.html (keeps the admin UI) -->
+<!-- public/admin.html (revisi) -->
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -61,7 +61,7 @@
   </div>
 
   <script>
-    // admin UI logic (same as earlier) - lightweight implementation
+    // admin UI logic
     const regEmail = document.getElementById('regEmail');
     const regPass = document.getElementById('regPass');
     const regBtn = document.getElementById('regBtn');
@@ -86,7 +86,6 @@
       } catch (e) { authMsg.style.color='red'; authMsg.textContent = e.message; }
     });
 
-
     loginBtn.addEventListener('click', async () => {
       const email = loginEmail.value.trim(); const password = loginPass.value;
       if (!email || !password) { authMsg.textContent = 'Email & password required'; return; }
@@ -103,11 +102,51 @@
 
     async function showAdminTools(){ authForms.style.display='none'; adminTools.style.display='block'; await loadUsers(); }
 
-    async function loadUsers(){ usersWrapper.innerHTML = 'Loading...'; try{ const res = await fetch('/admin/api/users'); if (res.status === 401) { usersWrapper.innerHTML='Unauthorized — please login.'; adminTools.style.display='none'; authForms.style.display='block'; return; } const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Fetch failed'); if (!data.users || data.users.length === 0) { usersWrapper.innerHTML = '<em>No users yet</em>'; return; }
-      const table = document.createElement('table'); table.innerHTML = `<thead><tr><th>ID</th><th>Name</th><th>Email</th><th>API Key</th><th>Created</th><th>API Created</th><th>Last Seen</th><th>Status</th><th>Actions</th></tr></thead>`;
-      const tbody = document.createElement('tbody'); data.users.forEach(u=>{ const tr = document.createElement('tr'); tr.innerHTML = `<td>${u.id}</td><td>${escapeHtml(u.firstname)} ${escapeHtml(u.lastname)}</td><td>${escapeHtml(u.email)}</td><td style="font-family:monospace">${u.api_key||'-'}</td><td>${u.user_created_at||'-'}</td><td>${u.apikey_created_at||'-'}</td><td>${u.last_seen||'-'}</td><td>${u.online_now?'<span class="status-online">online</span>':'<span class="status-off">offline</span>'}</td><td><button class="revoke" data-id="${u.id}">Revoke</button></td>`; tbody.appendChild(tr); }); table.appendChild(tbody); usersWrapper.innerHTML=''; usersWrapper.appendChild(table);
-      Array.from(document.querySelectorAll('.revoke')).forEach(btn=>btn.addEventListener('click', async (e)=>{ const id = e.currentTarget.dataset.id; if (!confirm('Revoke API key for user ' + id + '?')) return; const r = await fetch(`/admin/api/user/${id}/revoke`, { method: 'POST' }); if (r.ok) { alert('Revoked'); loadUsers(); } else alert('Error'); }));
-    }catch(e){ usersWrapper.innerHTML = `<div style="color:red">Error: ${e.message}</div>`; }}
+    async function loadUsers(){
+      usersWrapper.innerHTML = 'Loading...';
+      try{
+        const res = await fetch('/admin/api/users');
+        if (res.status === 401) { usersWrapper.innerHTML='Unauthorized — please login.'; adminTools.style.display='none'; authForms.style.display='block'; return; }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Fetch failed');
+        if (!data.users || data.users.length === 0) { usersWrapper.innerHTML = '<em>No users yet</em>'; return; }
+
+        const table = document.createElement('table');
+        table.innerHTML = `<thead><tr><th>ID</th><th>Name</th><th>Email</th><th>API Key</th><th>Created</th><th>API Created</th><th>Last Seen</th><th>Status</th><th>Actions</th></tr></thead>`;
+        const tbody = document.createElement('tbody');
+
+        data.users.forEach(u=>{
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${u.id}</td>
+                          <td>${escapeHtml(u.firstname)} ${escapeHtml(u.lastname)}</td>
+                          <td>${escapeHtml(u.email)}</td>
+                          <td style="font-family:monospace">${u.api_key||'-'}</td>
+                          <td>${u.user_created_at||'-'}</td>
+                          <td>${u.apikey_created_at||'-'}</td>
+                          <td>${u.last_seen_ago || (u.last_seen||'-')}</td>
+                          <td>${u.status === 'online' ? '<span class="status-online">online</span>' : '<span class="status-off">offline</span>'}</td>
+                          <td><button class="revoke" data-id="${u.id}">Revoke</button></td>`;
+          tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        usersWrapper.innerHTML='';
+        usersWrapper.appendChild(table);
+
+        Array.from(document.querySelectorAll('.revoke')).forEach(btn=>btn.addEventListener('click', async (e)=>{
+          const id = e.currentTarget.dataset.id;
+          if (!confirm(`Delete user ${id} and ALL their data? This cannot be undone.`)) return;
+          const r = await fetch(`/admin/api/user/${id}/revoke`, { method: 'DELETE' });
+          if (r.ok) { alert('User deleted'); loadUsers(); } else {
+            const err = await r.json().catch(()=>({error:'unknown'}));
+            alert('Error: ' + (err.error || 'unknown'));
+          }
+        }));
+
+      }catch(e){
+        usersWrapper.innerHTML = `<div style="color:red">Error: ${e.message}</div>`;
+      }
+    }
 
     function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>\"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
