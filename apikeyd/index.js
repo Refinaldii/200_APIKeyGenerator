@@ -1,4 +1,3 @@
-
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
@@ -29,8 +28,9 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
   else console.log(chalk.hex('#00ff88')('💾 Database connected: uwuntu_api.db'));
 });
 
-// create tables
+// ensure foreign keys so ON DELETE CASCADE works
 db.serialize(() => {
+  db.run(`PRAGMA foreign_keys = ON`);
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +87,6 @@ app.get('/api/generate-key', (req, res) => {
   res.json({ apiKey, createdAt: new Date().toISOString() });
 });
 
-
 // Save user + api key into DB. The apikey row's id will equal user.id
 app.post('/api/save-user', (req, res) => {
   const { firstname, lastname, email, apiKey } = req.body;
@@ -138,7 +137,6 @@ app.post('/api/save-user', (req, res) => {
   });
 });
 
-
 // Validate API key (checks apikeys table)
 app.get('/api/validate', (req, res) => {
   const { key } = req.query;
@@ -163,10 +161,10 @@ app.post('/api/user/:id/online', (req, res) => {
   });
 });
 
-// Set offline
+// Set offline (called on unload) -> keep last_seen as last-seen timestamp, set is_online = 0
 app.post('/api/user/:id/offline', (req, res) => {
   const id = Number(req.params.id);
-  db.run(`UPDATE users SET is_online = 0, last_seen = NULL WHERE id = ?`, [id], function(err) {
+  db.run(`UPDATE users SET is_online = 0, last_seen = datetime('now') WHERE id = ?`, [id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ success: true });
   });
@@ -219,8 +217,7 @@ function requireAdmin(req, res, next) {
   return res.status(401).json({ error: 'Unauthorized' });
 }
 
-
-// Admin: list users + apikeys + computed online (last_seen within 35s)
+// Admin: list users + apikeys + computed online (last_seen within 30 days)
 app.get('/admin/api/users', requireAdmin, (req, res) => {
 
   const sql = `
@@ -235,7 +232,7 @@ app.get('/admin/api/users', requireAdmin, (req, res) => {
       a.created_at AS apikey_created_at,
       CASE 
         WHEN u.last_seen IS NOT NULL 
-             AND datetime(u.last_seen) >= datetime('now', '-35 seconds')
+             AND datetime(u.last_seen) >= datetime('now', '-30 days')
         THEN 1 
         ELSE 0 
       END AS online_now
@@ -265,8 +262,9 @@ app.get('/admin/api/users', requireAdmin, (req, res) => {
     };
 
     const results = rows.map(r => ({
-      ...r, 
-      status: r.online_now === 1 ? "active" : "inact  ive",
+      ...r,
+      online_now: r.online_now === 1 ? 1 : 0,
+      status: (r.online_now === 1) ? 'online' : 'offline',
       last_seen_ago: addHumanTime(r.last_seen)
     }));
 
@@ -274,16 +272,18 @@ app.get('/admin/api/users', requireAdmin, (req, res) => {
   });
 });
 
-
-
-// Admin: revoke key
-app.post('/admin/api/user/:id/revoke', requireAdmin, (req, res) => {
+// Admin: revoke / delete entire user (supports DELETE and POST for backward compat)
+function deleteUserHandler(req, res) {
   const id = Number(req.params.id);
-  db.run(`DELETE FROM apikeys WHERE id = ?`, [id], function(err) {
+  db.run(`DELETE FROM users WHERE id = ?`, [id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
+    // rowcount available as this.changes
+    if (this.changes === 0) return res.status(404).json({ error: 'User not found' });
     res.json({ success: true });
   });
-});
+}
+app.post('/admin/api/user/:id/revoke', requireAdmin, deleteUserHandler);
+app.delete('/admin/api/user/:id/revoke', requireAdmin, deleteUserHandler);
 
 // Admin export
 app.get('/admin/api/export', requireAdmin, (req, res) => {
